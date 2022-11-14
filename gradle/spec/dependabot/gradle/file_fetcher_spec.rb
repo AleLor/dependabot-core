@@ -52,6 +52,19 @@ RSpec.describe Dependabot::Gradle::FileFetcher do
         to match_array(%w(build.gradle))
     end
 
+    context "with a buildfile and a gradle-wrapper.properties" do
+      before do
+        stub_content_request("?ref=sha", "contents_java_with_gradle_wrapper.json")
+        stub_content_request("gradle-wrapper.properties?ref=sha", "contents_gradle_wrapper.json")
+      end
+
+      it "fetches the gradle wrapper file" do
+        expect(file_fetcher_instance.files.count).to eq(2)
+        expect(file_fetcher_instance.files.map(&:name)).
+          to match_array(%w(build.gradle gradle-wrapper.properties))
+      end
+    end
+
     context "with a settings.gradle" do
       before do
         stub_content_request("?ref=sha", "contents_java_with_settings.json")
