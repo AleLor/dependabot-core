@@ -40,12 +40,19 @@ module Dependabot
         File.exist?(".pnp.cjs")
       end
 
+      def self.yarn_offline_cache?
+        yarn_cache_dir = fetch_yarnrc_yml_value("cacheFolder", ".yarn/cache")
+        File.exist?(yarn_cache_dir) && (fetch_yarnrc_yml_value("nodeLinker", "") == "node-modules")
+      end
+
       def self.yarn_berry_args
         if yarn_major_version == 2
           ""
-        elsif yarn_major_version >= 3 && yarn_zero_install?
+        elsif yarn_major_version >= 3 && (yarn_zero_install? || yarn_offline_cache?)
           "--mode=skip-build"
         else
+          # We only want this mode if the cache is not being updated/managed
+          # as this improperly leaves old versions in the cache
           "--mode=update-lockfile"
         end
       end
@@ -78,13 +85,13 @@ module Dependabot
       # contain malicious code.
       def self.run_yarn_commands(*commands)
         setup_yarn_berry
-        commands.each { |cmd| SharedHelpers.run_shell_command(cmd) }
+        commands.each { |cmd, fingerprint| SharedHelpers.run_shell_command(cmd, fingerprint: fingerprint) }
       end
 
       # Run a single yarn command returning stdout/stderr
-      def self.run_yarn_command(command)
+      def self.run_yarn_command(command, fingerprint: nil)
         setup_yarn_berry
-        SharedHelpers.run_shell_command(command)
+        SharedHelpers.run_shell_command(command, fingerprint: fingerprint)
       end
 
       def self.dependencies_with_all_versions_metadata(dependency_set)

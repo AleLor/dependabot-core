@@ -113,8 +113,7 @@ module Dependabot
         }
 
         files.each do |file|
-          absolute_path = file.name.start_with?("/") ? file.name : "/" + file.name
-          parameters[absolute_path] = file.content
+          parameters[file.path] = file.content
         end
 
         body = encode_form_parameters(parameters)
@@ -172,6 +171,8 @@ module Dependabot
         base_url = "https://api.bitbucket.org/2.0/user?fields=uuid"
         response = get(base_url)
         JSON.parse(response.body).fetch("uuid")
+      rescue Unauthorized
+        [nil]
       end
 
       def default_reviewers(repo)

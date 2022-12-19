@@ -64,16 +64,14 @@ ARG USER_GID=$USER_UID
 RUN if ! getent group "$USER_GID"; then groupadd --gid "$USER_GID" dependabot ; \
      else GROUP_NAME=$(getent group $USER_GID | awk -F':' '{print $1}'); groupmod -n dependabot "$GROUP_NAME" ; fi \
   && useradd --uid "${USER_UID}" --gid "${USER_GID}" -m dependabot \
-  && mkdir -p /opt && chown dependabot:dependabot /opt
+  && mkdir -p /opt && chown dependabot:dependabot /opt && chgrp dependabot /etc/ssl/certs && chmod g+w /etc/ssl/certs
 
 
 ### RUBY
 
 # When bumping Ruby minor, need to also add the previous version to `bundler/helpers/v{1,2}/monkey_patches/definition_ruby_version_patch.rb`
 ARG RUBY_VERSION=3.1.2
-ARG RUBY_INSTALL_VERSION=0.8.3
-# Generally simplest to pin RUBYGEMS_SYSTEM_VERSION to the version that default ships with RUBY_VERSION.
-ARG RUBYGEMS_SYSTEM_VERSION=3.3.7
+ARG RUBY_INSTALL_VERSION=0.8.5
 
 ARG BUNDLER_V1_VERSION=1.17.3
 # When bumping Bundler, need to also regenerate `updater/Gemfile.lock` via `bundle update --bundler`
@@ -90,7 +88,6 @@ RUN mkdir -p /tmp/ruby-install \
  && cd ruby-install-$RUBY_INSTALL_VERSION/ \
  && make \
  && ./bin/ruby-install --system --cleanup ruby $RUBY_VERSION -- --disable-install-doc \
- && gem update --system $RUBYGEMS_SYSTEM_VERSION --no-document \
  && gem install bundler -v $BUNDLER_V1_VERSION --no-document \
  && gem install bundler -v $BUNDLER_V2_VERSION --no-document \
  && rm -rf /var/lib/gems/*/cache/* \
@@ -227,8 +224,8 @@ RUN cd /tmp \
 # Install Erlang and Elixir
 ENV PATH="$PATH:/usr/local/elixir/bin"
 # https://github.com/elixir-lang/elixir/releases
-ARG ELIXIR_VERSION=v1.14.1
-ARG ELIXIR_CHECKSUM=610b23ab7f8ffd247a62b187c148cd2aa599b5a595137fe0531664903b921306
+ARG ELIXIR_VERSION=v1.14.2
+ARG ELIXIR_CHECKSUM=2e4addb85de85218d32c16b3710e8087f5b18b3b1560742137ad4c41bbbea63a
 ARG ERLANG_MAJOR_VERSION=24
 ARG ERLANG_VERSION=1:${ERLANG_MAJOR_VERSION}.2.1-1
 RUN curl -sSLfO https://packages.erlang-solutions.com/erlang-solutions_2.0_all.deb \
@@ -256,9 +253,9 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.64.0 --pr
 ### Terraform
 
 USER root
-ARG TERRAFORM_VERSION=1.3.5
-ARG TERRAFORM_AMD64_CHECKSUM=ac28037216c3bc41de2c22724e863d883320a770056969b8d211ca8af3d477cf
-ARG TERRAFORM_ARM64_CHECKSUM=ba5b1761046b899197bbfce3ad9b448d14550106d2cc37c52a60fc6822b584ed
+ARG TERRAFORM_VERSION=1.3.6
+ARG TERRAFORM_AMD64_CHECKSUM=bb44a4c2b0a832d49253b9034d8ccbd34f9feeb26eda71c665f6e7fa0861f49b
+ARG TERRAFORM_ARM64_CHECKSUM=f4b1af29094290f1b3935c29033c4e5291664ee2c015ca251a020dd425c847c3
 RUN cd /tmp \
   && curl -o terraform-${TARGETARCH}.tar.gz https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${TARGETARCH}.zip \
   && printf "$TERRAFORM_AMD64_CHECKSUM terraform-amd64.tar.gz\n$TERRAFORM_ARM64_CHECKSUM terraform-arm64.tar.gz\n" | sha256sum -c --ignore-missing - \
@@ -273,16 +270,21 @@ ENV PUB_CACHE=/opt/dart/pub-cache \
   PATH="${PATH}:/opt/dart/dart-sdk/bin"
 
 # https://dart.dev/get-dart/archive
-ARG DART_VERSION=2.18.5
-# TODO Dart now publishes SHA256 checksums for their releases, we should validate against those.
+ARG DART_VERSION=2.18.6
+
 RUN DART_ARCH=${TARGETARCH} \
   && if [ "$TARGETARCH" = "amd64" ]; then DART_ARCH=x64; fi \
-  && curl --connect-timeout 15 --retry 5 "https://storage.googleapis.com/dart-archive/channels/stable/release/${DART_VERSION}/sdk/dartsdk-linux-${DART_ARCH}-release.zip" > "/tmp/dart-sdk.zip" \
+  && DART_EXE="dartsdk-linux-${DART_ARCH}-release.zip" \
+  && DOWNLOAD_URL="https://storage.googleapis.com/dart-archive/channels/stable/release/${DART_VERSION}/sdk/${DART_EXE}" \
+  && curl --connect-timeout 15 --retry 5 "${DOWNLOAD_URL}" > "/tmp/${DART_EXE}" \
+  && curl --connect-timeout 15 --retry 5 "${DOWNLOAD_URL}.sha256sum" > "/tmp/${DART_EXE}.sha256sum" \
+  && cd /tmp/ \
+  && echo "$(cat /tmp/${DART_EXE}.sha256sum)" | sha256sum -c \
   && mkdir -p "$PUB_CACHE" \
   && chown dependabot:dependabot "$PUB_CACHE" \
-  && unzip "/tmp/dart-sdk.zip" -d "/opt/dart" > /dev/null \
+  && unzip "/tmp/${DART_EXE}" -d "/opt/dart" > /dev/null \
   && chmod -R o+rx "/opt/dart/dart-sdk" \
-  && rm "/tmp/dart-sdk.zip" \
+  && rm "/tmp/${DART_EXE}" \
   && dart --version
 
 COPY --chown=dependabot:dependabot LICENSE /home/dependabot
